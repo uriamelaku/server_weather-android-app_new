@@ -1,6 +1,6 @@
 const express = require("express");
-const User = require("../models/User");
 const authenticate = require("../middleware/authenticate");
+const User = require("../models/User");
 const { fetchWeatherByCity } = require("../services/weatherService");
 
 const router = express.Router();
@@ -15,14 +15,24 @@ router.get("/weather", authenticate, async (req, res) => {
 
     const weatherData = await fetchWeatherByCity(city);
 
-    await User.findByIdAndUpdate(req.user.userId, {
-      $push: {
-        history: {
-          $each: [{ ...weatherData, searchedAt: new Date() }],
-          $slice: -20
-        }
-      }
-    });
+    // שמירת החיפוש בהיסטוריה של המשתמש
+    const user = await User.findById(req.user.userId);
+    if (user) {
+      const historyEntry = {
+        city: weatherData.city,
+        country: weatherData.country,
+        temp: weatherData.temp,
+        feelsLike: weatherData.feelsLike,
+        humidity: weatherData.humidity,
+        windSpeed: weatherData.windSpeed,
+        description: weatherData.description,
+        icon: weatherData.icon,
+        timestamp: Date.now()
+      };
+
+      user.history.push(historyEntry);
+      await user.save();
+    }
 
     res.json(weatherData);
   } catch (error) {

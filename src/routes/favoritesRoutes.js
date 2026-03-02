@@ -1,13 +1,13 @@
 const express = require("express");
-const User = require("../models/User");
 const authenticate = require("../middleware/authenticate");
+const User = require("../models/User");
 const { fetchWeatherByCity } = require("../services/weatherService");
 
 const router = express.Router();
 
 router.get("/favorites", authenticate, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select("favorites");
+    const user = await User.findById(req.user.userId);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -21,10 +21,14 @@ router.get("/favorites", authenticate, async (req, res) => {
 
 router.post("/favorites", authenticate, async (req, res) => {
   try {
-    const { city } = req.body;
+    const { city, country } = req.body;
 
     if (!city || typeof city !== "string" || !city.trim()) {
       return res.status(400).json({ error: "City name is required" });
+    }
+
+    if (!country || typeof country !== "string" || !country.trim()) {
+      return res.status(400).json({ error: "Country is required" });
     }
 
     const user = await User.findById(req.user.userId);
@@ -32,31 +36,20 @@ router.post("/favorites", authenticate, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const cityInput = city.trim();
-    const alreadyExists = user.favorites.some(
-      (fav) => fav.city.toLowerCase() === cityInput.toLowerCase()
+    // בדיקה אם העיר כבר קיימת במועדפים
+    const exists = user.favorites.some(
+      fav => fav.city.toLowerCase() === city.toLowerCase()
     );
 
-    if (alreadyExists) {
+    if (exists) {
       return res.status(409).json({ error: "City already in favorites" });
     }
 
-    const weatherData = await fetchWeatherByCity(cityInput);
-
-    user.favorites.push({
-      city: weatherData.city,
-      country: weatherData.country,
-      addedAt: new Date()
-    });
-
+    user.favorites.push({ city, country });
     await user.save();
 
     res.status(201).json({ message: "Added to favorites", favorites: user.favorites });
   } catch (error) {
-    if (error.status === 404) {
-      return res.status(404).json({ error: "City not found" });
-    }
-
     console.error("❌ Add favorite error:", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -75,15 +68,9 @@ router.delete("/favorites/:city", authenticate, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const initialLength = user.favorites.length;
     user.favorites = user.favorites.filter(
-      (fav) => fav.city.toLowerCase() !== cityParam.toLowerCase()
+      fav => fav.city.toLowerCase() !== cityParam.toLowerCase()
     );
-
-    if (user.favorites.length === initialLength) {
-      return res.status(404).json({ error: "City not found in favorites" });
-    }
-
     await user.save();
 
     res.json({ message: "Removed from favorites", favorites: user.favorites });
