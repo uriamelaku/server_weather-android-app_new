@@ -1,0 +1,559 @@
+openapi: 3.0.3
+info:
+  title: Auth Server API
+  version: 1.0.0
+  description: |
+    Single source of truth for the mobile app and backend API integration.
+    Update this contract first before changing server or client behavior.
+
+servers:
+  - url: http://localhost:3000
+    description: Local backend (desktop/web)
+  - url: http://10.0.2.2:3000
+    description: Android emulator -> host machine backend
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Weather
+  - name: History
+  - name: Favorites
+
+paths:
+  /ping:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: Server is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PingResponse"
+              example:
+                message: pong
+
+  /register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              username: demo
+              password: secret123
+      responses:
+        "200":
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              example:
+                message: User registered
+        "400":
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Missing fields
+        "409":
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: User already exists
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /login:
+    post:
+      tags: [Auth]
+      summary: Login and receive JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              username: demo
+              password: secret123
+      responses:
+        "200":
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+              example:
+                message: logged in
+                token: <jwt-token>
+                user:
+                  id: 65f4f8ec1a2b3c4d5e6f7a8b
+                  username: demo
+        "400":
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Missing fields
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: Invalid credentials
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/weather:
+    get:
+      tags: [Weather]
+      summary: Get weather by city and save to user history
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: city
+          required: true
+          schema:
+            type: string
+          description: City name (URL-encoded)
+          example: Tel Aviv
+      responses:
+        "200":
+          description: Weather data found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeatherData"
+              example:
+                city: Tel Aviv
+                country: IL
+                temp: 22.5
+                feelsLike: 21.8
+                humidity: 65
+                windSpeed: 3.5
+                description: clear sky
+                icon: 01d
+                timestamp: 1709380800
+        "400":
+          description: Missing city query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: City name is required
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: City not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: City not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/history:
+    get:
+      tags: [History]
+      summary: Get current user weather search history
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: History returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [history]
+                properties:
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HistoryEntry"
+              example:
+                history:
+                  - city: Tel Aviv
+                    country: IL
+                    temp: 22.5
+                    feelsLike: 21.8
+                    humidity: 65
+                    windSpeed: 3.5
+                    description: clear sky
+                    icon: 01d
+                    timestamp: 1709380800
+                    searchedAt: "2026-03-03T09:30:00.000Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: User not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      tags: [History]
+      summary: Clear current user history
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: History cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              example:
+                message: History cleared
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: User not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/favorites:
+    get:
+      tags: [Favorites]
+      summary: Get current user favorite cities
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Favorites returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [favorites]
+                properties:
+                  favorites:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FavoriteEntry"
+              example:
+                favorites:
+                  - city: London
+                    country: GB
+                    addedAt: "2026-03-03T09:20:00.000Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: User not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    post:
+      tags: [Favorites]
+      summary: Add city to favorites
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddFavoriteRequest"
+            example:
+              city: London
+              country: GB
+      responses:
+        "201":
+          description: Added to favorites
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, favorites]
+                properties:
+                  message:
+                    type: string
+                  favorites:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FavoriteEntry"
+              example:
+                message: Added to favorites
+                favorites:
+                  - city: London
+                    country: GB
+                    addedAt: "2026-03-03T09:20:00.000Z"
+        "400":
+          description: Missing or invalid city/country
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                cityMissing:
+                  value:
+                    error: City name is required
+                countryMissing:
+                  value:
+                    error: Country is required
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: User not found
+        "409":
+          description: City already exists in favorites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: City already in favorites
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/favorites/{city}:
+    delete:
+      tags: [Favorites]
+      summary: Remove city from favorites by city name
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: city
+          required: true
+          schema:
+            type: string
+          description: City to remove
+          example: London
+      responses:
+        "200":
+          description: Removed from favorites (or no-op if not found)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, favorites]
+                properties:
+                  message:
+                    type: string
+                  favorites:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FavoriteEntry"
+              example:
+                message: Removed from favorites
+                favorites: []
+        "400":
+          description: Missing city path parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: City name is required
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: User not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: Unauthorized
+
+    InternalServerError:
+      description: Server-side unexpected error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: Internal server error
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    PingResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          example: pong
+
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+
+    LoginResponse:
+      type: object
+      required: [message, token, user]
+      properties:
+        message:
+          type: string
+          example: logged in
+        token:
+          type: string
+          description: JWT token
+        user:
+          type: object
+          required: [id, username]
+          properties:
+            id:
+              type: string
+            username:
+              type: string
+
+    WeatherData:
+      type: object
+      required:
+        - city
+        - country
+        - temp
+        - feelsLike
+        - humidity
+        - windSpeed
+        - description
+        - icon
+        - timestamp
+      properties:
+        city:
+          type: string
+        country:
+          type: string
+        temp:
+          type: number
+        feelsLike:
+          type: number
+        humidity:
+          type: number
+        windSpeed:
+          type: number
+        description:
+          type: string
+        icon:
+          type: string
+        timestamp:
+          type: number
+
+    HistoryEntry:
+      allOf:
+        - $ref: "#/components/schemas/WeatherData"
+        - type: object
+          properties:
+            searchedAt:
+              type: string
+              format: date-time
+              description: MongoDB-added timestamp when search was stored
+
+    FavoriteEntry:
+      type: object
+      required: [city, country]
+      properties:
+        city:
+          type: string
+        country:
+          type: string
+        addedAt:
+          type: string
+          format: date-time
+          description: MongoDB-added timestamp when favorite was stored
+
+    AddFavoriteRequest:
+      type: object
+      required: [city, country]
+      properties:
+        city:
+          type: string
+          minLength: 1
+        country:
+          type: string
+          minLength: 1

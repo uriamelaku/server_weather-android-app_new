@@ -19,9 +19,18 @@ app.use((req, res, next) => {
   next();
 });
 
+if (!process.env.MONGO_URI) {
+  console.error("MONGO_URI is missing in environment variables");
+  process.exit(1);
+}
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB error:", err));
+
+app.get("/ping", (req, res) => {
+  res.status(200).json({ status: "ok", message: "pong" });
+});
 
 app.use(authRoutes);
 app.use("/api", weatherRoutes);
@@ -31,5 +40,5 @@ app.use(healthRoutes);
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on port ${port}`);
 });
