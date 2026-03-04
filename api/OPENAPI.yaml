@@ -243,6 +243,66 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
+  /api/history/{city}:
+    delete:
+      tags: [History]
+      summary: Remove specific city from user history
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: city
+          required: true
+          schema:
+            type: string
+          description: City name to remove (URL-encoded)
+          example: Tel Aviv
+      responses:
+        "200":
+          description: History item removed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [history]
+                properties:
+                  history:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HistoryEntry"
+              example:
+                history:
+                  - city: Jerusalem
+                    country: IL
+                    temp: 18.5
+                    feelsLike: 17.2
+                    humidity: 55
+                    windSpeed: 2.1
+                    description: partly cloudy
+                    icon: 02d
+                    timestamp: 1709380900
+                    searchedAt: "2026-03-03T10:15:00.000Z"
+        "400":
+          description: Missing city path parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: City name is required
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: User not found
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   /api/favorites:
     get:
       tags: [Favorites]
@@ -346,6 +406,39 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 error: City already in favorites
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+    delete:
+      tags: [Favorites]
+      summary: Clear all favorites for current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All favorites cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [favorites]
+                properties:
+                  favorites:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FavoriteEntry"
+              example:
+                favorites: []
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: User not found
         "500":
           $ref: "#/components/responses/InternalServerError"
 

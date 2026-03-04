@@ -55,6 +55,23 @@ router.post("/favorites", authenticate, async (req, res) => {
   }
 });
 
+router.delete("/favorites", authenticate, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    user.favorites = [];
+    await user.save();
+
+    res.json({ favorites: user.favorites });
+  } catch (error) {
+    console.error("❌ Clear all favorites error:", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.delete("/favorites/:city", authenticate, async (req, res) => {
   try {
     const cityParam = req.params.city;
