@@ -35,12 +35,12 @@ router.delete("/history", authenticate, async (req, res) => {
   }
 });
 
-router.delete("/history/:city", authenticate, async (req, res) => {
+router.delete("/history/:timestamp", authenticate, async (req, res) => {
   try {
-    const cityParam = decodeURIComponent(req.params.city);
+    const timestampParam = Number.parseInt(req.params.timestamp, 10);
 
-    if (!cityParam) {
-      return res.status(400).json({ error: "City name is required" });
+    if (Number.isNaN(timestampParam)) {
+      return res.status(400).json({ error: "Invalid timestamp" });
     }
 
     const user = await User.findById(req.user.userId);
@@ -48,9 +48,13 @@ router.delete("/history/:city", authenticate, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    user.history = user.history.filter(
-      item => item.city.toLowerCase() !== cityParam.toLowerCase()
-    );
+    const initialLength = user.history.length;
+    user.history = user.history.filter(item => item.timestamp !== timestampParam);
+
+    if (user.history.length === initialLength) {
+      return res.status(404).json({ error: "History item not found" });
+    }
+
     await user.save();
 
     res.json({ history: user.history });

@@ -243,20 +243,21 @@ paths:
         "500":
           $ref: "#/components/responses/InternalServerError"
 
-  /api/history/{city}:
+  /api/history/{timestamp}:
     delete:
       tags: [History]
-      summary: Remove specific city from user history
+      summary: Remove specific history item by timestamp
       security:
         - bearerAuth: []
       parameters:
         - in: path
-          name: city
+          name: timestamp
           required: true
           schema:
-            type: string
-          description: City name to remove (URL-encoded)
-          example: Tel Aviv
+            type: integer
+            format: int64
+          description: Unix timestamp of the history item to remove
+          example: 1709380800
       responses:
         "200":
           description: History item removed
@@ -283,23 +284,23 @@ paths:
                     timestamp: 1709380900
                     searchedAt: "2026-03-03T10:15:00.000Z"
         "400":
-          description: Missing city path parameter
+          description: Invalid timestamp path parameter
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
-                error: City name is required
+                error: Invalid timestamp
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          description: User not found
+          description: User not found or history item not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
-                error: User not found
+                error: History item not found
         "500":
           $ref: "#/components/responses/InternalServerError"
 
