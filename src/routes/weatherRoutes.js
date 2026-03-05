@@ -1,19 +1,52 @@
 const express = require("express");
 const authenticate = require("../middleware/authenticate");
 const User = require("../models/User");
-const { fetchWeatherByCity } = require("../services/weatherService");
+const { fetchWeatherByCity, fetchWeatherByCoordinates } = require("../services/weatherService");
 
 const router = express.Router();
 
 router.get("/weather", authenticate, async (req, res) => {
   try {
-    const { city } = req.query;
+    const { city, lat, lon } = req.query;
 
-    if (!city) {
-      return res.status(400).json({ error: "City name is required" });
+    // בדיקה: או עיר או קואורדינטות (אבל לא שניהם ולא אף אחד)
+    if (!city && (!lat || !lon)) {
+      return res.status(400).json({ 
+        error: "Either 'city' or both 'lat' and 'lon' are required" 
+      });
     }
 
-    const weatherData = await fetchWeatherByCity(city);
+    if (city && (lat || lon)) {
+      return res.status(400).json({ 
+        error: "Provide either 'city' or 'lat'+'lon', not both" 
+      });
+    }
+
+    let weatherData;
+
+    // קריאה לפי קואורדינטות
+    if (lat && lon) {
+      const latitude = parseFloat(lat);
+      const longitude = parseFloat(lon);
+
+      if (isNaN(latitude) || isNaN(longitude)) {
+        return res.status(400).json({ error: "Invalid coordinates format" });
+      }
+
+      if (latitude < -90 || latitude > 90) {
+        return res.status(400).json({ error: "Latitude must be between -90 and 90" });
+      }
+
+      if (longitude < -180 || longitude > 180) {
+        return res.status(400).json({ error: "Longitude must be between -180 and 180" });
+      }
+
+      weatherData = await fetchWeatherByCoordinates(latitude, longitude);
+    } 
+    // קריאה לפי עיר
+    else {
+      weatherData = await fetchWeatherByCity(city);
+    }
 
     // שמירת החיפוש בהיסטוריה של המשתמש
     const user = await User.findById(req.user.userId);
@@ -37,7 +70,7 @@ router.get("/weather", authenticate, async (req, res) => {
     res.json(weatherData);
   } catch (error) {
     if (error.status === 404) {
-      return res.status(404).json({ error: "City not found" });
+      return res.status(404).json({ error: error.message || "Location not found" });
     }
 
     console.error("❌ Weather API error:", error.message);

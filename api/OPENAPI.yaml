@@ -123,17 +123,37 @@ paths:
   /api/weather:
     get:
       tags: [Weather]
-      summary: Get weather by city and save to user history
+      summary: Get weather by city name or GPS coordinates (saves to history)
       security:
         - bearerAuth: []
       parameters:
         - in: query
           name: city
-          required: true
+          required: false
           schema:
             type: string
-          description: City name (URL-encoded)
+          description: City name (URL-encoded). Use this OR lat+lon, not both.
           example: Tel Aviv
+        - in: query
+          name: lat
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: -90
+            maximum: 90
+          description: Latitude coordinate. Must be used together with 'lon'.
+          example: 32.0853
+        - in: query
+          name: lon
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: -180
+            maximum: 180
+          description: Longitude coordinate. Must be used together with 'lat'.
+          example: 34.7818
       responses:
         "200":
           description: Weather data found
@@ -151,14 +171,28 @@ paths:
                 description: clear sky
                 icon: 01d
                 timestamp: 1709380800
+                coordinates:
+                  lat: 32.0853
+                  lon: 34.7818
         "400":
-          description: Missing city query parameter
+          description: Missing or invalid parameters
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-              example:
-                error: City name is required
+              examples:
+                missing:
+                  summary: Missing parameters
+                  value:
+                    error: Either 'city' or both 'lat' and 'lon' are required
+                conflict:
+                  summary: Both methods provided
+                  value:
+                    error: Provide either 'city' or 'lat'+'lon', not both
+                invalidCoords:
+                  summary: Invalid coordinate format
+                  value:
+                    error: Invalid coordinates format
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
