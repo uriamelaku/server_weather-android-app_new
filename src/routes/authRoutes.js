@@ -175,12 +175,14 @@ router.post("/api/auth/send-otp", async (req, res) => {
     user.emailOtpAttempts = 0;
     await user.save();
 
-    // Send email
-    await sendOtpEmail(recipientEmail, otpCode);
-
+    // Respond quickly to avoid mobile timeout, then send OTP in background.
     res.json({
       otpSent: true,
       email: recipientEmail
+    });
+
+    sendOtpEmail(recipientEmail, otpCode).catch((sendErr) => {
+      console.error("❌ Background OTP send error:", sendErr.message);
     });
   } catch (error) {
     if (error && (error.responseCode === 535 || error.code === "EAUTH")) {
