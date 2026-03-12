@@ -23,6 +23,9 @@ const transporter = nodemailer.createTransport({
     user: smtpUser,
     pass: smtpPass
   },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
   tls: {
     minVersion: "TLSv1.2"
   }
@@ -31,18 +34,34 @@ const transporter = nodemailer.createTransport({
 let transporterVerified = false;
 let cachedFromEmail = null;
 
-function fetchVerifiedBrevoSenders() {
+function isSmtpNetworkError(error) {
+  const networkCodes = [
+    "ETIMEDOUT",
+    "ESOCKET",
+    "ECONNECTION",
+    "ECONNREFUSED",
+    "EHOSTUNREACH",
+    "ENETUNREACH"
+  ];
+  return Boolean(error && (networkCodes.includes(error.code) || error.responseCode === 421));
+}
+
+function brevoApiRequest(path, method, data) {
   return new Promise((resolve, reject) => {
     if (!process.env.BREVO_API_KEY) {
-      return resolve([]);
+      return reject(new Error("BREVO_API_KEY is missing"));
     }
 
+    const payload = data ? JSON.stringify(data) : null;
     const req = https.request(
-      "https://api.brevo.com/v3/senders",
       {
-        method: "GET",
+        hostname: "api.brevo.com",
+        path,
+        method,
         headers: {
-          "api-key": process.env.BREVO_API_KEY
+          "api-key": process.env.BREVO_API_KEY,
+          "Content-Type": "application/json",
+          ...(payload ? { "Content-Length": Buffer.byteLength(payload) } : {})
         }
       },
       (res) => {
@@ -51,27 +70,82 @@ function fetchVerifiedBrevoSenders() {
           body += chunk;
         });
         res.on("end", () => {
-          if (res.statusCode !== 200) {
-            return reject(new Error(`Failed to fetch Brevo senders: HTTP ${res.statusCode}`));
+          const ok = res.statusCode >= 200 && res.statusCode < 300;
+          if (!ok) {
+            return reject(
+              new Error(`Brevo API request failed: HTTP ${res.statusCode}${body ? ` - ${body}` : ""}`)
+            );
+          }
+
+          if (!body) {
+            return resolve({});
           }
 
           try {
-            const parsed = JSON.parse(body || "{}");
-            const senders = Array.isArray(parsed.senders) ? parsed.senders : [];
-            const activeEmails = senders
-              .filter((s) => s && s.active && s.email)
-              .map((s) => String(s.email).trim().toLowerCase());
-            resolve(activeEmails);
+            resolve(JSON.parse(body));
           } catch (err) {
-            reject(new Error("Failed to parse Brevo senders response"));
+            reject(new Error("Failed to parse Brevo API response"));
           }
         });
       }
     );
 
+    req.setTimeout(10000, () => {
+      req.destroy(new Error("Brevo API request timeout"));
+    });
+
     req.on("error", (err) => reject(err));
+    if (payload) {
+      req.write(payload);
+    }
     req.end();
   });
+}
+
+function fetchVerifiedBrevoSenders() {
+  return brevoApiRequest("/v3/senders", "GET")
+    .then((parsed) => {
+      const senders = Array.isArray(parsed.senders) ? parsed.senders : [];
+      return senders
+        .filter((s) => s && s.active && s.email)
+        .map((s) => String(s.email).trim().toLowerCase());
+    })
+    .catch((err) => {
+      if (!process.env.BREVO_API_KEY) {
+        return [];
+      }
+      throw err;
+    });
+}
+
+function buildOtpHtml(code) {
+  return `
+        <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
+          <h2>Login Verification Code</h2>
+          <p>Your one-time password is:</p>
+          <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #2c3e50;">
+            ${code}
+          </div>
+          <p style="color: #7f8c8d; font-size: 14px;">
+            This code expires in ${process.env.OTP_EXPIRES_MINUTES || 5} minutes.
+          </p>
+          <p style="color: #e74c3c;">
+            Do not share this code with anyone.
+          </p>
+        </div>
+      `;
+}
+
+async function sendViaBrevoApi(email, code, fromEmail) {
+  const payload = {
+    sender: { email: fromEmail },
+    to: [{ email }],
+    subject: "Your Login Code",
+    htmlContent: buildOtpHtml(code)
+  };
+
+  const result = await brevoApiRequest("/v3/smtp/email", "POST", payload);
+  return { success: true, messageId: result.messageId || result.message || null };
 }
 
 async function resolveFromEmail() {
@@ -119,8 +193,6 @@ async function verifyTransporterOnce() {
  */
 async function sendOtpEmail(email, code) {
   try {
-    await verifyTransporterOnce();
-
     const fromEmail = await resolveFromEmail();
     console.log("[EMAIL] Preparing OTP email");
     console.log("[EMAIL] from:", fromEmail);
@@ -131,32 +203,25 @@ async function sendOtpEmail(email, code) {
       from: fromEmail,
       to: email,
       subject: "Your Login Code",
-      html: `
-        <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
-          <h2>Login Verification Code</h2>
-          <p>Your one-time password is:</p>
-          <div style="font-size: 32px; font-weight: bold; letter-spacing: 5px; margin: 20px 0; color: #2c3e50;">
-            ${code}
-          </div>
-          <p style="color: #7f8c8d; font-size: 14px;">
-            This code expires in ${process.env.OTP_EXPIRES_MINUTES || 5} minutes.
-          </p>
-          <p style="color: #e74c3c;">
-            Do not share this code with anyone.
-          </p>
-        </div>
-      `
+      html: buildOtpHtml(code)
     };
 
-    const result = await transporter.sendMail(mailOptions);
-    console.log("✅ OTP email sent successfully:", result.messageId);
-    console.log("[EMAIL] SMTP response:", result.response);
-    console.log("[EMAIL] accepted:", result.accepted);
-    console.log("[EMAIL] rejected:", result.rejected);
-    if (result.pending && result.pending.length) {
-      console.log("[EMAIL] pending:", result.pending);
+    try {
+      await verifyTransporterOnce();
+      const result = await transporter.sendMail(mailOptions);
+      console.log("✅ OTP email sent successfully via SMTP:", result.messageId);
+      return { success: true, messageId: result.messageId };
+    } catch (smtpError) {
+      if (isSmtpNetworkError(smtpError) && process.env.BREVO_API_KEY) {
+        console.warn(
+          `[EMAIL] SMTP unavailable (${smtpError.code || smtpError.message}). Falling back to Brevo HTTP API.`
+        );
+        const apiResult = await sendViaBrevoApi(email, code, fromEmail);
+        console.log("✅ OTP email sent successfully via Brevo API:", apiResult.messageId || "OK");
+        return apiResult;
+      }
+      throw smtpError;
     }
-    return { success: true, messageId: result.messageId };
   } catch (error) {
     if (error && (error.responseCode === 535 || error.code === "EAUTH")) {
       console.error(
